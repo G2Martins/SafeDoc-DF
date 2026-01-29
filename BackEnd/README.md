@@ -46,7 +46,6 @@ SafeDoc-DF/
 │   │   └── output/             # Resultados processados
 │   ├── requirements.txt
 │   ├── Dockerfile
-│   ├── .env.example
 │   └── README.md
 └── FrontEnd/
 ```
