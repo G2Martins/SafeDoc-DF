@@ -88,18 +88,18 @@ SafeDoc-DF/
 └── FrontEnd/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── components/
-│   │   │   │   ├── footer/
-│   │   │   │   ├── navbar/
-│   │   │   │   ├── footer/
+│   │   │   ├── components/          # Navbar, Footer e componentes de UI
 │   │   │   ├── pages/
+│   │   │   │   └── home/            # Tela principal (texto + CSV)
 │   │   │   ├── services/
-│   │   ├── assets/
-│   │   ├── main.ts
-│   │   ├── styles.css
-│   │   └── index.html
+│   │   │   │   └── api.service.ts   # Client HTTP para o backend
+│   │   │   ├── app.routes.ts        # Rotas
+│   │   │   └── app.config.ts        # Configuração do app
+│   │   ├── index.html               # Inclui Font Awesome via CDN
+│   │   └── styles.css / app.css     # Estilos globais (Tailwind)
 │   ├── tailwind.config.js
-│   └── angular.json
+│   ├── angular.json
+│   └── package.json
 └── README.md
 ```
 

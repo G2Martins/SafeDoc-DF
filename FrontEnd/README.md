@@ -1,59 +1,168 @@
-# FrontEnd
+<div align="center">
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.2.2.
+# SafeDoc-DF — FrontEnd  
+**Interface Web (Angular + Tailwind) para análise de dados pessoais em pedidos de acesso à informação**
 
-## Development server
+<br>
 
-To start a local development server, run:
+<p>
+  <strong><h3>Tecnologias Utilizadas</h3></strong>
+  <img src="https://img.shields.io/badge/Frontend-Angular_20-EA1EF3?style=for-the-badge&logo=angular&logoColor=white" alt="Angular">
+  &nbsp;&nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/Styling-Tailwind_CSS_3-EA1EF3?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind">
+  <br><br>
+  <img src="https://img.shields.io/badge/Language-TypeScript-8C0590?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
+  &nbsp;&nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/HTTP-RxJS-8C0590?style=for-the-badge&logo=reactivex&logoColor=white" alt="RxJS">
+  <br><br>
+  <img src="https://img.shields.io/badge/Icons-Font_Awesome-5B0772?style=for-the-badge&logo=fontawesome&logoColor=white" alt="Font Awesome">
+  &nbsp;&nbsp;&nbsp;
+  <img src="https://img.shields.io/badge/Tooling-Angular_CLI-5B0772?style=for-the-badge&logo=angular&logoColor=white" alt="Angular CLI">
+</p>
+
+</div>
+
+---
+
+## 📖 Sobre esta camada (FrontEnd)
+
+Este diretório contém a **interface web** do **SafeDoc-DF**, construída em **Angular (standalone)** e estilizada com **Tailwind CSS**.
+
+A aplicação oferece:
+
+- **Análise rápida de texto**: o usuário cola um texto e o sistema retorna **status**, **score**, **texto anonimizado** e **lista de dados sensíveis detectados**.
+- **Análise em lote (CSV)**: o usuário faz upload de um CSV e recebe um relatório com as primeiras linhas, incluindo **texto anonimizado** e **classificação por risco**.
+- **Botões de download** (opcional, caso você tenha aplicado a melhoria): exporta resultado em **TXT/JSON** (texto) e **CSV/JSON** (lote).
+
+---
+
+## 🧩 Como o FrontEnd conversa com o Backend
+
+O front consome a API do backend (FastAPI) em:
+
+- `POST /validate/text` — envia `{ texto: "..." }`
+- `POST /validate/csv` — envia `multipart/form-data` com o arquivo em `file`
+
+Configuração atual em `src/app/services/api.service.ts`:
+
+```ts
+private baseUrl = 'http://localhost:8000';
+```
+
+---
+
+## ✅ Pré-requisitos
+
+- **Node.js 18+**
+- **npm** (ou yarn/pnpm)
+- Backend rodando (recomendado) em `http://localhost:8000`
+
+---
+
+## 🚀 Rodar localmente
+
+Dentro da pasta `FrontEnd`:
 
 ```bash
+cd frontend
+npm install
 ng serve
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Acesse:
 
-## Code scaffolding
+- FrontEnd: `http://localhost:4200`
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+---
 
-```bash
-ng generate component component-name
+## 🔧 Ajuste de URL do Backend (API)
+
+Se seu backend estiver em outra URL/porta, altere:
+
+`src/app/services/api.service.ts`
+
+```ts
+private baseUrl = 'http://localhost:8000';
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+Exemplos:
 
-```bash
-ng generate --help
+- Backend local em outra porta: `http://localhost:8080`
+- Backend em VM/EC2: `http://SEU_IP:8000`
+- Backend com domínio/HTTPS: `https://api.seudominio.com`
+
+---
+
+## 🌐 CORS (importante)
+
+Se o backend estiver em outra origem (host/porta), o **FastAPI** deve permitir CORS para `http://localhost:4200`.
+
+No backend, habilite CORS (exemplo):
+
+- Permitir origem `http://localhost:4200`
+- Permitir métodos `POST`
+- Permitir headers comuns
+
+---
+
+## 🗂️ Estrutura do Projeto (FrontEnd)
+
+Principais caminhos:
+
+```
+FrontEnd/
+├── src/
+│   ├── app/
+│   │   ├── components/          # Navbar, Footer e componentes de UI
+│   │   ├── pages/
+│   │   │   └── home/            # Tela principal (texto + CSV)
+│   │   ├── services/
+│   │   │   └── api.service.ts   # Client HTTP para o backend
+│   │   ├── app.routes.ts        # Rotas
+│   │   └── app.config.ts        # Configuração do app
+│   ├── index.html               # Inclui Font Awesome via CDN
+│   └── styles.css / app.css     # Estilos globais (Tailwind)
+├── tailwind.config.js
+├── angular.json
+└── package.json
 ```
 
-## Building
+---
 
-To build the project run:
+## 🧪 Scripts úteis
 
-```bash
-ng build
-```
+- `npm start` — servidor de desenvolvimento
+- `npm run build` — build de produção
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+---
 
-## Running unit tests
-
-To execute unit tests with the [Karma](https://karma-runner.github.io) test runner, use the following command:
+## 📦 Build para produção
 
 ```bash
-ng test
+npm run build
 ```
 
-## Running end-to-end tests
+O output vai para a pasta definida pelo Angular (geralmente `dist/`).
 
-For end-to-end (e2e) testing, run:
+---
 
-```bash
-ng e2e
-```
+## 🛠️ Troubleshooting rápido
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+### 1) “Erro ao conectar com a API”
+- Confirme se o backend está rodando em `http://localhost:8000`
+- Confirme CORS habilitado
+- Confirme que a rota existe: `POST /validate/text` e `POST /validate/csv`
 
-## Additional Resources
+### 2) “CORS policy blocked”
+- Habilite CORS no backend para `http://localhost:4200`
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+### 3) Upload CSV não funciona
+- Verifique se o backend espera `file` como nome do campo do form-data
+- Confirme `accept=".csv"` e o conteúdo do CSV
+
+---
+
+## 📄 Licença e contexto (Hackathon)
+
+Este FrontEnd faz parte do projeto **SafeDoc-DF**, desenvolvido para o **Hackathon em Controle Social – Participa DF**, na categoria **Acesso à Informação**, visando apoiar a classificação correta de pedidos quando houver **dados pessoais**.
+
