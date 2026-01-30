@@ -125,11 +125,6 @@ cp .env.example .env
 uvicorn src.main:app --reload --port 8000
 ```
 
-### Modo Produção
-```bash
-uvicorn src.main:app --host 0.0.0.0 --port 8000
-```
-
 ```
 API disponível em: http://127.0.0.1:8000/
 Documentação interativa: http://127.0.0.1:8000/docs
