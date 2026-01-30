@@ -192,10 +192,11 @@ def _validator_cpf(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple
         return (True, dig, None)
 
     # fallback contextual (bases reais têm ruído)
-    if _tem_kw(search_text, m.start(), m.end(), ["cpf"], window=80):
-        return (True, dig, "cpf_suspeito_dv")
+    # if _tem_kw(search_text, m.start(), m.end(), ["cpf"], window=80):
+    #     return (True, dig, "cpf_suspeito_dv")
 
-    return (False, None, "cpf_invalido")
+    # return (False, None, "cpf_invalido")
+    return (True, dig, "cpf_suspeito_dv")
 
 
 def _validator_cnpj(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
