@@ -1,3 +1,4 @@
+# src/participa_df/api/schemas.py
 from pydantic import BaseModel
 from typing import Dict
 

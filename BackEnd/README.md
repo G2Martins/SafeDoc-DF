@@ -50,7 +50,6 @@ SafeDoc-DF/
 └── FrontEnd/
 ```
 
-
 ---
 
 ## 🚀 Tecnologias Utilizadas
@@ -125,5 +124,39 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
 API disponível em: http://localhost:8000
 Documentação interativa: http://localhost:8000/docs
 ```
+
+---
+
+## 🤖 Declaração de Uso de IA (Item 13.9 do Edital)
+
+Em conformidade com o item 13.9 do Edital nº 10/2025, declaramos que:
+
+1.  **No Código Fonte:** O núcleo da solução (**SafeDoc-DF**) baseia-se em algoritmos determinísticos, Expressões Regulares (Regex) otimizadas para o contexto brasileiro e validação lógica (Dígitos Verificadores). Não há uso de modelos de IA Generativa (LLMs) no processamento em tempo real dos dados, garantindo previsibilidade e baixo custo computacional.
+2.  **No Desenvolvimento:** Ferramentas de IA Generativa (como ChatGPT/Gemini) foram utilizadas como auxiliares para:
+    * Geração de massa de dados fictícia para testes unitários.
+    * Refatoração de código e otimização de docstrings.
+    * Estruturação da documentação técnica.
+
+---
+
+## 🛡️ Privacidade e Segurança (Design Privacy)
+
+O SafeDoc-DF foi projetado seguindo os princípios de *Privacy by Design*:
+
+* **Processamento Local/Efêmero:** A API processa os arquivos em memória e devolve o resultado. Nenhum dado do cidadão (CPF, Telefone, etc.) é salvo em banco de dados persistente ou enviado para APIs de terceiros.
+* **Anonimização:** O sistema oferece a funcionalidade de retornar o texto mascarado (ex: `***.456.789-**`), garantindo que a informação possa ser publicada no SEI/DODF sem expor o titular.
+
+---
+
+## 👥 Equipe
+
+Projeto desenvolvido por:
+
+* **[Mayron Oliveira Malaquias]** - *[BackEnd Developer]* - [Linkedln](https://www.linkedin.com/in/mayronn/)
+* **[Gustavo Martins Gripaldi]** - *[FrontEnd Developer / Data Engineering]* - [Linkedln](https://www.linkedin.com/in/g2martins/)
+
+---
+
+*Desafio Participa DF - 1º Hackathon em Controle Social da CGDF.*
 
 
