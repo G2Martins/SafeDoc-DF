@@ -97,7 +97,7 @@ PALAVRAS_CHAVE_RISCO = [
     "inscricao municipal", "inscrição municipal", "inscricao estadual", "inscrição estadual",
     "numero interno", "número interno", "autuacao", "autuação", "auto de infracao", "auto de infração",
     "nota fiscal", "nf", "empenho", "cda", "nire", "registro", "ri", "registro de imoveis", "registro de imóveis",
-    # saúde/educação (contexto de risco)
+    # educação/servidor
     "paciente", "aluno", "servidor",
     # sua observação
     "ppg",
@@ -114,7 +114,7 @@ PALAVRAS_ENDERECO = [
     "bairro", "cep", "logradouro", "quadra", "lote", "setor", "residencia", "residência",
 ]
 
-# gatilhos para nome (evita FP em nomes de órgãos, títulos, etc.)
+# gatilhos para nome (evita FP em “parte representada”, títulos, etc.)
 GATILHOS_NOME = [
     "nome:", "nome do requerente:", "requerente:", "interessado:", "interessada:",
     "servidor:", "servidora:", "paciente:", "aluno:", "aluna:", "responsavel:", "responsável:",
@@ -128,6 +128,27 @@ KW_ORGAO_ENTIDADE = [
     "coordenacao", "coordenação", "diretoria", "superintendencia", "superintendência",
 ]
 
+# “stop-phrases” que estavam virando “nome_completo”
+STOP_PHRASES_NOME = [
+    "parte representada",
+    "parte requerente",
+    "parte interessada",
+    "nome do requerente",
+    "nome da parte",
+    "nome do interessado",
+    "nome do servidor",
+    "dados do requerente",
+    "dados do interessado",
+]
+
+# keywords positivas específicas por tipo de ID (para reduzir confusão CPF->matrícula etc.)
+KW_MATRICULA = ["matricula", "matrícula", "registro", "ri", "registro de imoveis", "registro de imóveis", "inscricao imobiliaria", "inscrição imobiliária"]
+KW_INSCRICAO = ["inscricao", "inscrição", "inscricao municipal", "inscrição municipal", "inscricao estadual", "inscrição estadual", "ppg"]
+KW_SIAPE = ["siape", "servidor", "matricula siape", "matrícula siape"]
+KW_NIS_PIS = ["nis", "pis", "pasep", "nit"]
+KW_CNH = ["cnh", "carteira nacional de habilitacao", "carteira nacional de habilitação"]
+KW_TITULO = ["titulo de eleitor", "título de eleitor"]
+
 
 def _fragmento(texto_norm: str, start: int, end: int, window: int = 80) -> str:
     s = max(0, start - window)
@@ -140,10 +161,15 @@ def _tem_kw(texto_norm: str, start: int, end: int, kws: List[str], window: int =
     return any(kw in frag for kw in kws)
 
 
-def _tem_gatilho_nome(texto_norm: str, start: int, window: int = 90) -> bool:
+def _tem_gatilho_nome(texto_norm: str, start: int, window: int = 120) -> bool:
     s = max(0, start - window)
     frag = texto_norm[s:start]
     return any(g in frag for g in GATILHOS_NOME)
+
+
+def _tem_stopphrase_nome(texto_norm: str, start: int, end: int, window: int = 80) -> bool:
+    frag = _fragmento(texto_norm, start, end, window=window)
+    return any(sp in frag for sp in STOP_PHRASES_NOME)
 
 
 # =========================
@@ -165,7 +191,7 @@ def _validator_cpf(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple
     if validar_cpf(v):
         return (True, dig, None)
 
-    # fallback contextual (muito comum em bases reais ter CPF com erro/ruído)
+    # fallback contextual (bases reais têm ruído)
     if _tem_kw(search_text, m.start(), m.end(), ["cpf"], window=80):
         return (True, dig, "cpf_suspeito_dv")
 
@@ -267,50 +293,62 @@ def _validator_data_contextual(m: "re.Match[str]", raw_text: str, search_text: s
     return (True, m.group(0), None)
 
 
-def _validator_id_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+def _validator_id_contextual_factory(kws_obrigatorias: List[str], motivo_sem_ctx: str) -> ValidatorFn:
     """
-    Para matrícula/inscrição/siape/nis/pis/cnh/título/etc:
-    - validação leve por tamanho
-    - exige contexto (palavra-chave próxima) para virar match
+    Cria validador para IDs que só devem ser aceitos quando houver palavras-chave *do próprio tipo* no entorno.
+    Isso reduz o problema de:
+      - CPF ser capturado como matrícula
+      - número de processo virar RG
+      - “inscrição” pegar qualquer número longo
     """
-    raw = m.group(0).strip()
-    norm = re.sub(r"[^\w]+", "", raw, flags=re.UNICODE).replace("_", "")
+    def _v(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        raw = m.group(0).strip()
+        norm = re.sub(r"[^\w]+", "", raw, flags=re.UNICODE).replace("_", "")
 
-    if len(norm) < 4:
-        return (False, None, "id_curto")
+        if len(norm) < 4:
+            return (False, None, "id_curto")
 
-    # evita ano isolado
-    if re.fullmatch(r"(19|20)\d{2}", norm):
-        return (False, None, "ano_isolado")
+        if re.fullmatch(r"(19|20)\d{2}", norm):
+            return (False, None, "ano_isolado")
 
-    if not _tem_kw(search_text, m.start(), m.end(), PALAVRAS_CHAVE_RISCO, window=110):
-        return (False, None, "id_sem_contexto")
+        # exige keywords específicas do tipo
+        if not _tem_kw(search_text, m.start(), m.end(), kws_obrigatorias, window=140):
+            return (False, None, motivo_sem_ctx)
 
-    return (True, norm, None)
+        return (True, norm, None)
+
+    return _v
 
 
 def _validator_nome_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    Nome completo: só aceita se tiver gatilho explícito antes.
-    E rejeita se houver contexto de órgão/entidade (reduz FP).
+    Nome completo:
+    - só aceita se tiver gatilho explícito antes
+    - rejeita stop-phrases (ex.: “parte representada”)
+    - rejeita se houver contexto de órgão/entidade no entorno
     """
     raw = m.group(0).strip()
 
-    if not _tem_gatilho_nome(search_text, m.start(), window=120):
+    if not _tem_gatilho_nome(search_text, m.start(), window=140):
         return (False, None, "nome_sem_gatilho")
 
-    # rejeita se for claramente entidade/órgão no entorno
-    if _tem_kw(search_text, m.start(), m.end(), KW_ORGAO_ENTIDADE, window=80):
+    if _tem_stopphrase_nome(search_text, m.start(), m.end(), window=90):
+        return (False, None, "nome_stopphrase")
+
+    if _tem_kw(search_text, m.start(), m.end(), KW_ORGAO_ENTIDADE, window=90):
         return (False, None, "nome_contexto_orgao")
 
-    # normalização leve (preserva raw p/ relatório; norm aqui é só “raw”)
+    # exige pelo menos 2 palavras “de verdade”
+    if len(raw.split()) < 2:
+        return (False, None, "nome_curto")
+
     return (True, raw, None)
 
 
 # =========================
 # Regras (prioridades e padrões)
 # =========================
-# Prioridade recomendada (menor = ganha no overlap):
+# Prioridade (menor = ganha no overlap):
 # 1 CPF/CNPJ/EMAIL
 # 2 TELEFONE
 # 3 PROCESSOS
@@ -361,7 +399,6 @@ REGRAS: List[Regra] = [
         peso=4,
         prioridade=3,
     ),
-    # SEI genérico (evita colisão com CEP)
     Regra(
         nome="processo_sei_generico",
         padrao=_comp(r"\b\d{4,6}-\d{6,8}/\d{4}-\d{2}\b"),
@@ -384,7 +421,6 @@ REGRAS: List[Regra] = [
     # --- ENDEREÇO / SOFT ---
     Regra(
         nome="cep",
-        # evita pegar CEP colado em "/AAAA-##" de processos
         padrao=_comp(r"\b\d{5}-?\d{3}\b(?!/\d{4}-\d{2})"),
         tipo="soft",
         peso=3,
@@ -418,112 +454,106 @@ REGRAS: List[Regra] = [
     ),
     Regra(
         nome="rg",
-        # mantido soft (muito variável)
+        # mantido soft, MAS exige contexto forte agora (keywords do próprio RG)
         padrao=_comp(r"\b(?:\d{1,2}\.?\d{3}\.?\d{3}-?\d|[1-9]\d{6,8}-?\d)\b"),
         tipo="soft",
         peso=2,
         prioridade=4,
+        validator=_validator_id_contextual_factory(["rg", "identidade", "ssP", "orgao expedidor", "órgão expedidor"], "rg_sem_contexto"),
         min_len=7,
-        peso_min_sem_contexto=1,
-        boost_contexto=2,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
     ),
 
     # =========================
-    # NOVO: Matrículas / Inscrições / IDs (contextuais)
+    # Matrículas / Inscrições / IDs (agora com contexto ESPECÍFICO)
     # =========================
 
-    # matrícula (inclui letra final): 98745632D | 123.456.789-0 | 12345678-9
     Regra(
         nome="matricula",
         padrao=_comp(r"\b\d{1,3}(?:\.\d{3}){1,3}-?\d{1,2}[A-Z]?\b|\b\d{6,10}[A-Z]?\b"),
         tipo="soft",
         peso=3,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_MATRICULA, "matricula_sem_contexto"),
         min_len=6,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # inscrição (variações comuns): 00569848-9 | 157028-1 | 78965412
     Regra(
         nome="inscricao",
         padrao=_comp(r"\b\d{4,10}-\d\b|\b\d{6,12}\b"),
         tipo="soft",
         peso=3,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_INSCRICAO, "inscricao_sem_contexto"),
         min_len=6,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # SIAPE (geralmente 7-8 dígitos)
     Regra(
         nome="siape",
         padrao=_comp(r"\b\d{7,8}\b"),
         tipo="soft",
         peso=3,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_SIAPE, "siape_sem_contexto"),
         min_len=7,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # NIS/PIS/PASEP/NIT (11 dígitos) - só com contexto
     Regra(
         nome="nis_pis_pasep",
         padrao=_comp(r"\b\d{11}\b"),
         tipo="soft",
         peso=3,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_NIS_PIS, "nis_pis_sem_contexto"),
         min_len=11,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # CNH (9-11 dígitos) - só com contexto
     Regra(
         nome="cnh_numero",
         padrao=_comp(r"\b\d{9,11}\b"),
         tipo="soft",
         peso=2,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_CNH, "cnh_sem_contexto"),
         min_len=9,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # Título de eleitor (12 dígitos) - só com contexto
     Regra(
         nome="titulo_eleitor_numero",
         padrao=_comp(r"\b\d{12}\b"),
         tipo="soft",
         peso=2,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(KW_TITULO, "titulo_sem_contexto"),
         min_len=12,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # NIRE (8-12 + opcional -dígito)
     Regra(
         nome="nire",
         padrao=_comp(r"\bNIRE\s*[:\-]?\s*\d{8,12}(?:-\d)?\b"),
         tipo="soft",
         peso=2,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(["nire"], "nire_sem_contexto"),
         min_len=8,
         exige_contexto=True,
         peso_min_sem_contexto=0,
         boost_contexto=0,
     ),
-    # IDs documentais com rótulo (CDA, protocolo, número interno, autuação, NF, empenho…)
     Regra(
         nome="id_documental_rotulado",
         padrao=_comp(
@@ -532,7 +562,10 @@ REGRAS: List[Regra] = [
         tipo="soft",
         peso=2,
         prioridade=4,
-        validator=_validator_id_contextual,
+        validator=_validator_id_contextual_factory(
+            ["cda", "protocolo", "número interno", "numero interno", "autuacao", "autuação", "nota fiscal", "empenho", "documento/empenho"],
+            "id_doc_sem_contexto"
+        ),
         min_len=6,
         exige_contexto=True,
         peso_min_sem_contexto=0,
@@ -540,7 +573,7 @@ REGRAS: List[Regra] = [
     ),
 
     # =========================
-    # NOVO: Nome completo (somente com gatilho)
+    # Nome completo (somente com gatilho)
     # =========================
     Regra(
         nome="nome_completo",
