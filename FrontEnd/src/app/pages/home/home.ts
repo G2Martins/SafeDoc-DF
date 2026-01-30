@@ -8,7 +8,6 @@ import { ApiService } from '../../services/api.service';
 @Component({
   selector: 'app-home',
   standalone: true,
-
   imports: [
     CommonModule,
     FormsModule,
@@ -26,7 +25,7 @@ export class HomeComponent {
 
   // Variáveis para CSV
   arquivoSelecionado: File | null = null;
-  resultadoCsv: any = null;
+  resultadoCsv: any = null; // esperado: { total: number, resultados: [...] }
   loadingCsv: boolean = false;
 
   constructor(private apiService: ApiService) { }
@@ -39,7 +38,8 @@ export class HomeComponent {
     this.resultadoTexto = null;
 
     this.apiService.validateText(this.textoInput).subscribe({
-      next: (res) => {
+      next: (res: any) => {
+        // res esperado: {status, score, matches, texto_anonimizado}
         this.resultadoTexto = res;
         this.loadingTexto = false;
       },
@@ -53,7 +53,7 @@ export class HomeComponent {
 
   // --- Funções de CSV ---
   onFileSelected(event: any) {
-    const file: File = event.target.files[0];
+    const file: File = event.target.files?.[0];
     if (file) {
       this.arquivoSelecionado = file;
     }
@@ -66,7 +66,8 @@ export class HomeComponent {
     this.resultadoCsv = null;
 
     this.apiService.validateCsv(this.arquivoSelecionado).subscribe({
-      next: (res) => {
+      next: (res: any) => {
+        // res esperado: { total: number, resultados: Array<...> }
         this.resultadoCsv = res;
         this.loadingCsv = false;
       },
