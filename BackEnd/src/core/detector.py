@@ -1,34 +1,47 @@
 from __future__ import annotations
+
 import re
 import unicodedata
 import pandas as pd
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
-# Importações da nova estrutura do projeto
+# Importações da estrutura do projeto
 from ..models.validators import (
-    validar_cpf, 
-    validar_cnpj, 
-    validar_telefone_br, 
-    apenas_digitos
+    validar_cpf,
+    validar_cnpj,
+    validar_telefone_br,  # pode retornar bool ou tuple; vamos adaptar
+    apenas_digitos,
 )
 from .config import DEFAULT_POLITICA, PoliticaRisco
 
-# --- Tipos e Constantes ---
+# =========================
+# Tipos
+# =========================
 
-ValidatorFn = Callable[["re.Match[str]"], Tuple[bool, str, str]]
+ValidatorFn = Callable[["re.Match[str]", str, str], Tuple[bool, Optional[str], Optional[str]]]
+# assinatura: (match, raw_text, search_text_norm) -> (ok, norm, motivo)
+
 
 @dataclass(frozen=True)
 class Regra:
     nome: str
     padrao: re.Pattern
-    tipo: str  # 'hard' (identificadores fortes) ou 'soft' (contextuais)
+    tipo: str  # 'hard' ou 'soft'
     peso: int
+    prioridade: int  # menor = mais prioritário no overlap
     validator: Optional[ValidatorFn] = None
+    # parâmetros extras p/ soft (evitar FP e cobrir matrículas/inscrições)
+    peso_min_sem_contexto: int = 1        # se 0, ignora sem contexto
+    boost_contexto: int = 2               # quanto soma quando tem contexto
+    min_len: int = 0                      # tamanho mínimo do match (raw)
+    exige_contexto: bool = False          # se True, sem contexto ignora
+
 
 @dataclass
 class MatchInfo:
     regra: str
+    prioridade: int
     start: int
     end: int
     raw: str
@@ -37,272 +50,691 @@ class MatchInfo:
     motivo: Optional[str]
     peso_aplicado: int
 
-# Palavras que, se próximas a um dado 'soft', aumentam o risco
-PALAVRAS_CHAVE = [
-    "cpf", "cnpj", "rg", "telefone", "celular", "contato", 
-    "whatsapp", "email", "e-mail", "endereço", "rua", "cep", 
-    "bairro", "nascimento", "data", "placa", "veículo", 
-    "processo", "matricula", "servidor", "paciente", "aluno"
-]
 
-# --- Funções Auxiliares de Normalização ---
+# =========================
+# Normalização
+# =========================
 
 def _comp(p: str) -> re.Pattern:
-    """Compila regex ignorando case."""
-    return re.compile(p, flags=re.IGNORECASE)
+    return re.compile(p, flags=re.IGNORECASE | re.UNICODE)
+
 
 def normalizar_raw(texto: Any) -> str:
-    """Converte entrada para string limpa, preservando acentos/case original."""
     if texto is None:
         return ""
-    s = str(texto).replace("\u00a0", " ")  # Remove non-breaking spaces
+    s = str(texto).replace("\u00a0", " ")
     return re.sub(r"\s+", " ", s).strip()
 
+
 def normalizar_busca(texto: Any) -> str:
-    """Normaliza para busca: sem acentos, lowercase."""
     s = normalizar_raw(texto)
     if not s:
         return ""
     s = unicodedata.normalize("NFKD", s)
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", s).strip().casefold()
+    s = re.sub(r"\s+", " ", s).strip().casefold()
+    return s
 
-# --- Definição das Regras ---
+
+# =========================
+# Contexto (keywords)
+# =========================
+
+PALAVRAS_CHAVE_RISCO = [
+    # identificadores
+    "cpf", "cnpj", "rg", "identidade", "pis", "pasep", "nis", "nit", "cns", "sus", "cnh",
+    "passaporte", "titulo de eleitor", "título de eleitor", "ctps", "oab",
+    # contato
+    "telefone", "celular", "contato", "whatsapp", "wpp", "zap", "email", "e-mail",
+    # endereço
+    "endereco", "endereço", "rua", "avenida", "av", "travessa", "bairro", "cep", "logradouro",
+    "numero", "número", "complemento", "quadra", "lote", "setor",
+    # dados pessoais
+    "nascimento", "data de nascimento", "nasc", "dn", "filiação", "filiacao", "mae", "mãe", "pai",
+    # governo / processos / cadastros
+    "processo", "sei", "cnj", "protocolo", "autos", "matricula", "matrícula", "siape",
+    "inscricao", "inscrição", "inscricao imobiliaria", "inscrição imobiliária",
+    "inscricao municipal", "inscrição municipal", "inscricao estadual", "inscrição estadual",
+    "numero interno", "número interno", "autuacao", "autuação", "auto de infracao", "auto de infração",
+    "nota fiscal", "nf", "empenho", "cda", "nire", "registro", "ri", "registro de imoveis", "registro de imóveis",
+    # saúde/educação (contexto de risco)
+    "paciente", "aluno", "servidor",
+    # sua observação
+    "ppg",
+]
+
+# termos que costumam causar falsos positivos para TELEFONE / CEP / etc.
+PALAVRAS_NEGATIVAS_TELEFONE = [
+    "nire", "protocolo", "processo", "sei", "cnj", "matricula", "matrícula",
+    "cda", "empenho", "nota fiscal", "nf", "id", "inscricao", "inscrição",
+]
+
+PALAVRAS_ENDERECO = [
+    "endereco", "endereço", "rua", "avenida", "av", "travessa",
+    "bairro", "cep", "logradouro", "quadra", "lote", "setor", "residencia", "residência",
+]
+
+# gatilhos para nome (evita FP em nomes de órgãos, títulos, etc.)
+GATILHOS_NOME = [
+    "nome:", "nome do requerente:", "requerente:", "interessado:", "interessada:",
+    "servidor:", "servidora:", "paciente:", "aluno:", "aluna:", "responsavel:", "responsável:",
+    "representante:", "advogado:", "advogada:",
+]
+
+# palavras que indicam entidade/órgão (evita marcar como "nome completo")
+KW_ORGAO_ENTIDADE = [
+    "secretaria", "ministerio", "ministério", "governo", "prefeitura", "camara", "câmara",
+    "tribunal", "universidade", "instituto", "fundacao", "fundação", "departamento",
+    "coordenacao", "coordenação", "diretoria", "superintendencia", "superintendência",
+]
+
+
+def _fragmento(texto_norm: str, start: int, end: int, window: int = 80) -> str:
+    s = max(0, start - window)
+    e = min(len(texto_norm), end + window)
+    return texto_norm[s:e]
+
+
+def _tem_kw(texto_norm: str, start: int, end: int, kws: List[str], window: int = 80) -> bool:
+    frag = _fragmento(texto_norm, start, end, window=window)
+    return any(kw in frag for kw in kws)
+
+
+def _tem_gatilho_nome(texto_norm: str, start: int, window: int = 90) -> bool:
+    s = max(0, start - window)
+    frag = texto_norm[s:start]
+    return any(g in frag for g in GATILHOS_NOME)
+
+
+# =========================
+# Validadores (robustos)
+# =========================
+
+def _validator_cpf(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    CPF:
+    - valida DV quando possível
+    - fallback: se DV falhar, mas houver contexto "cpf" perto, aceita como suspeito (para aumentar recall)
+    """
+    v = m.group(0)
+    dig = apenas_digitos(v)
+
+    if len(dig) != 11:
+        return (False, None, "cpf_tamanho_invalido")
+
+    if validar_cpf(v):
+        return (True, dig, None)
+
+    # fallback contextual (muito comum em bases reais ter CPF com erro/ruído)
+    if _tem_kw(search_text, m.start(), m.end(), ["cpf"], window=80):
+        return (True, dig, "cpf_suspeito_dv")
+
+    return (False, None, "cpf_invalido")
+
+
+def _validator_cnpj(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    v = m.group(0)
+    dig = apenas_digitos(v)
+
+    if len(dig) != 14:
+        return (False, None, "cnpj_tamanho_invalido")
+
+    if validar_cnpj(v):
+        return (True, dig, None)
+
+    if _tem_kw(search_text, m.start(), m.end(), ["cnpj"], window=80):
+        return (True, dig, "cnpj_suspeito_dv")
+
+    return (False, None, "cnpj_invalido")
+
+
+def _validator_telefone_strito(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Telefone BR com redução agressiva de falso positivo:
+    - exige DDD presente (10 ou 11 dígitos com DDD)
+    - rejeita se contexto negativo (nire/protocolo/processo/etc.)
+    - valida com validar_telefone_br quando possível
+    """
+    raw = m.group(0)
+    dig = apenas_digitos(raw)
+
+    if _tem_kw(search_text, m.start(), m.end(), PALAVRAS_NEGATIVAS_TELEFONE, window=60):
+        return (False, None, "telefone_contexto_negativo")
+
+    if dig.startswith("55") and len(dig) in (12, 13):
+        dig = dig[2:]
+
+    if len(dig) not in (10, 11):
+        return (False, None, "telefone_tamanho_invalido")
+
+    ddd = dig[:2]
+    if not (ddd.isdigit() and 11 <= int(ddd) <= 99):
+        return (False, None, "telefone_ddd_invalido")
+
+    if len(dig) == 11 and dig[2] != "9":
+        return (False, None, "telefone_celular_sem_9")
+
+    try:
+        v = validar_telefone_br(raw)
+        if isinstance(v, tuple) and len(v) >= 1:
+            ok = bool(v[0])
+            norm = v[1] if len(v) > 1 else dig
+            motivo = v[2] if len(v) > 2 else (None if ok else "telefone_invalido")
+            return (ok, norm if ok else None, motivo)
+        else:
+            ok = bool(v)
+            return (ok, dig if ok else None, None if ok else "telefone_invalido")
+    except Exception:
+        return (True, dig, "telefone_validacao_fallback")
+
+
+def _validator_cep_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    CEP: só aceita com contexto de endereço.
+    """
+    raw = m.group(0)
+    dig = apenas_digitos(raw)
+    if len(dig) != 8:
+        return (False, None, "cep_tamanho_invalido")
+
+    if not _tem_kw(search_text, m.start(), m.end(), PALAVRAS_ENDERECO, window=90):
+        return (False, None, "cep_sem_contexto_endereco")
+
+    return (True, dig, None)
+
+
+def _validator_email_tld_suspeito(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    raw = m.group(0)
+    lower = raw.casefold()
+
+    parts = lower.rsplit(".", 1)
+    if len(parts) == 2:
+        tld = parts[1]
+        if not re.fullmatch(r"[a-z]{2,24}", tld):
+            return (True, lower, "email_tld_suspeito")
+
+        if lower.endswith((".com.br", ".gov.br", ".org.br", ".net.br", ".edu.br")):
+            return (True, lower, None)
+
+        comuns = {"com", "org", "net", "edu", "gov", "br"}
+        if tld not in comuns:
+            return (True, lower, "email_tld_incomum")
+
+    return (True, lower, None)
+
+
+def _validator_data_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    return (True, m.group(0), None)
+
+
+def _validator_id_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Para matrícula/inscrição/siape/nis/pis/cnh/título/etc:
+    - validação leve por tamanho
+    - exige contexto (palavra-chave próxima) para virar match
+    """
+    raw = m.group(0).strip()
+    norm = re.sub(r"[^\w]+", "", raw, flags=re.UNICODE).replace("_", "")
+
+    if len(norm) < 4:
+        return (False, None, "id_curto")
+
+    # evita ano isolado
+    if re.fullmatch(r"(19|20)\d{2}", norm):
+        return (False, None, "ano_isolado")
+
+    if not _tem_kw(search_text, m.start(), m.end(), PALAVRAS_CHAVE_RISCO, window=110):
+        return (False, None, "id_sem_contexto")
+
+    return (True, norm, None)
+
+
+def _validator_nome_contextual(m: "re.Match[str]", raw_text: str, search_text: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Nome completo: só aceita se tiver gatilho explícito antes.
+    E rejeita se houver contexto de órgão/entidade (reduz FP).
+    """
+    raw = m.group(0).strip()
+
+    if not _tem_gatilho_nome(search_text, m.start(), window=120):
+        return (False, None, "nome_sem_gatilho")
+
+    # rejeita se for claramente entidade/órgão no entorno
+    if _tem_kw(search_text, m.start(), m.end(), KW_ORGAO_ENTIDADE, window=80):
+        return (False, None, "nome_contexto_orgao")
+
+    # normalização leve (preserva raw p/ relatório; norm aqui é só “raw”)
+    return (True, raw, None)
+
+
+# =========================
+# Regras (prioridades e padrões)
+# =========================
+# Prioridade recomendada (menor = ganha no overlap):
+# 1 CPF/CNPJ/EMAIL
+# 2 TELEFONE
+# 3 PROCESSOS
+# 4 OUTROS (CEP/PLACA/DATA/RG/IDS/NOME...)
 
 REGRAS: List[Regra] = [
-    # CPF: Valida dígito verificador
+    # --- HARD ---
     Regra(
-        nome="cpf", 
-        padrao=_comp(r"\b(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}|\d{11})\b"), 
-        tipo="hard", 
-        peso=DEFAULT_POLITICA.score_sensivel_estrito, 
-        validator=lambda m: (validar_cpf(m.group(0)), apenas_digitos(m.group(0)), "cpf_invalido")
-    ),
-    # CNPJ: Valida dígito verificador
-    Regra(
-        nome="cnpj", 
-        padrao=_comp(r"\b(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{14})\b"), 
-        tipo="hard", 
+        nome="cpf",
+        padrao=_comp(r"\b(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}|\d{11})\b"),
+        tipo="hard",
         peso=DEFAULT_POLITICA.score_sensivel_estrito,
-        validator=lambda m: (validar_cnpj(m.group(0)), apenas_digitos(m.group(0)), "cnpj_invalido")
-    ),
-    # E-mail: Regex padrão
-    Regra(
-        nome="email", 
-        padrao=_comp(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+\b"), 
-        tipo="hard", 
-        peso=5
-    ),
-    # Processo SEI/CNJ (Padrões comuns de órgãos públicos)
-    Regra(
-        nome="processo_cnj", 
-        padrao=_comp(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b"), 
-        tipo="hard", 
-        peso=5
+        prioridade=1,
+        validator=_validator_cpf,
+        min_len=11,
     ),
     Regra(
-        nome="processo_sei", 
-        padrao=_comp(r"\b\d{5}\.\d{6}/\d{4}-\d{2}\b"), 
-        tipo="hard", 
-        peso=4
+        nome="cnpj",
+        padrao=_comp(r"\b(?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}|\d{14})\b"),
+        tipo="hard",
+        peso=DEFAULT_POLITICA.score_sensivel_estrito,
+        prioridade=1,
+        validator=_validator_cnpj,
+        min_len=14,
     ),
-    # Telefone: Valida DDD e formato
     Regra(
-        nome="telefone", 
-        padrao=_comp(r"\b(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[\s-]?\d{4}\b"), 
-        tipo="hard", 
+        nome="email",
+        padrao=_comp(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+\b"),
+        tipo="hard",
+        peso=5,
+        prioridade=1,
+        validator=_validator_email_tld_suspeito,
+        min_len=6,
+    ),
+
+    # --- PROCESSOS ---
+    Regra(
+        nome="processo_cnj",
+        padrao=_comp(r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b"),
+        tipo="hard",
+        peso=5,
+        prioridade=3,
+    ),
+    Regra(
+        nome="processo_sei",
+        padrao=_comp(r"\b\d{5}\.\d{6}/\d{4}-\d{2}\b"),
+        tipo="hard",
         peso=4,
-        validator=lambda m: validar_telefone_br(m.group(0))
+        prioridade=3,
     ),
-    # CEP
+    # SEI genérico (evita colisão com CEP)
     Regra(
-        nome="cep", 
-        padrao=_comp(r"\b\d{5}-?\d{3}\b"), 
-        tipo="soft", 
-        peso=3
+        nome="processo_sei_generico",
+        padrao=_comp(r"\b\d{4,6}-\d{6,8}/\d{4}-\d{2}\b"),
+        tipo="hard",
+        peso=4,
+        prioridade=3,
     ),
-    # Placa de Veículo (Mercosul ou antiga)
+
+    # --- TELEFONE ---
     Regra(
-        nome="placa_veiculo", 
-        padrao=_comp(r"\b[A-Z]{3}\d[A-Z0-9]\d{2}\b"), 
-        tipo="soft", 
-        peso=2
+        nome="telefone",
+        padrao=_comp(r"\b(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[\s-]?\d{4}\b"),
+        tipo="hard",
+        peso=4,
+        prioridade=2,
+        validator=_validator_telefone_strito,
+        min_len=8,
     ),
-    # Data (Pode gerar muitos falsos positivos, por isso peso baixo e tipo soft)
+
+    # --- ENDEREÇO / SOFT ---
     Regra(
-        nome="data", 
-        padrao=_comp(r"\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](19|20)\d{2}\b"), 
-        tipo="soft", 
-        peso=1
+        nome="cep",
+        # evita pegar CEP colado em "/AAAA-##" de processos
+        padrao=_comp(r"\b\d{5}-?\d{3}\b(?!/\d{4}-\d{2})"),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_cep_contextual,
+        min_len=8,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    Regra(
+        nome="placa_veiculo",
+        padrao=_comp(r"\b[A-Z]{3}\d[A-Z0-9]\d{2}\b"),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        min_len=7,
+        peso_min_sem_contexto=1,
+        boost_contexto=1,
+    ),
+    Regra(
+        nome="data",
+        padrao=_comp(r"\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](19|20)\d{2}\b"),
+        tipo="soft",
+        peso=1,
+        prioridade=4,
+        validator=_validator_data_contextual,
+        min_len=8,
+        peso_min_sem_contexto=1,
+        boost_contexto=2,
+    ),
+    Regra(
+        nome="rg",
+        # mantido soft (muito variável)
+        padrao=_comp(r"\b(?:\d{1,2}\.?\d{3}\.?\d{3}-?\d|[1-9]\d{6,8}-?\d)\b"),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        min_len=7,
+        peso_min_sem_contexto=1,
+        boost_contexto=2,
+    ),
+
+    # =========================
+    # NOVO: Matrículas / Inscrições / IDs (contextuais)
+    # =========================
+
+    # matrícula (inclui letra final): 98745632D | 123.456.789-0 | 12345678-9
+    Regra(
+        nome="matricula",
+        padrao=_comp(r"\b\d{1,3}(?:\.\d{3}){1,3}-?\d{1,2}[A-Z]?\b|\b\d{6,10}[A-Z]?\b"),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=6,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # inscrição (variações comuns): 00569848-9 | 157028-1 | 78965412
+    Regra(
+        nome="inscricao",
+        padrao=_comp(r"\b\d{4,10}-\d\b|\b\d{6,12}\b"),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=6,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # SIAPE (geralmente 7-8 dígitos)
+    Regra(
+        nome="siape",
+        padrao=_comp(r"\b\d{7,8}\b"),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=7,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # NIS/PIS/PASEP/NIT (11 dígitos) - só com contexto
+    Regra(
+        nome="nis_pis_pasep",
+        padrao=_comp(r"\b\d{11}\b"),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=11,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # CNH (9-11 dígitos) - só com contexto
+    Regra(
+        nome="cnh_numero",
+        padrao=_comp(r"\b\d{9,11}\b"),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=9,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # Título de eleitor (12 dígitos) - só com contexto
+    Regra(
+        nome="titulo_eleitor_numero",
+        padrao=_comp(r"\b\d{12}\b"),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=12,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # NIRE (8-12 + opcional -dígito)
+    Regra(
+        nome="nire",
+        padrao=_comp(r"\bNIRE\s*[:\-]?\s*\d{8,12}(?:-\d)?\b"),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=8,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+    # IDs documentais com rótulo (CDA, protocolo, número interno, autuação, NF, empenho…)
+    Regra(
+        nome="id_documental_rotulado",
+        padrao=_comp(
+            r"\b(?:CDA|PROTOCOLO|N[ÚU]MERO\s+INTERNO|AUTUA[ÇC][AÃ]O|NOTA\s+FISCAL|EMPENHO|DOCUMENTO/EMPENHO)\s*[:#º°\-]?\s*[A-Z]?\d{3,20}\b"
+        ),
+        tipo="soft",
+        peso=2,
+        prioridade=4,
+        validator=_validator_id_contextual,
+        min_len=6,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
+    ),
+
+    # =========================
+    # NOVO: Nome completo (somente com gatilho)
+    # =========================
+    Regra(
+        nome="nome_completo",
+        padrao=_comp(
+            r"\b(?:[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]{2,}"
+            r"(?:\s+(?:de|da|do|dos|das|e))?){1,}"
+            r"\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]{2,}"
+            r"(?:\s+[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ][a-záàâãéèêíìîóòôõúùûç]{2,}){0,3}\b"
+        ),
+        tipo="soft",
+        peso=3,
+        prioridade=4,
+        validator=_validator_nome_contextual,
+        min_len=8,
+        exige_contexto=True,
+        peso_min_sem_contexto=0,
+        boost_contexto=0,
     ),
 ]
 
-# --- Lógica Core de Detecção ---
 
-def _verificar_overlap(matches: List[MatchInfo]) -> List[MatchInfo]:
+# =========================
+# Overlap / seleção por prioridade
+# =========================
+
+def _resolver_overlaps(matches: List[MatchInfo]) -> List[MatchInfo]:
     """
-    Remove matches que estão contidos dentro de outros matches maiores.
-    Ex: Evita detectar um CPF dentro de um número de telefone mal formatado.
-    Prioriza o match mais longo ou com maior peso.
+    Resolve overlaps com regras:
+    1) prioridade (menor ganha)
+    2) maior peso aplicado
+    3) maior comprimento
+    4) se empatar, mantém o primeiro (estável)
     """
     if not matches:
         return []
 
-    # Ordena por posição inicial e depois pelo tamanho (decrescente)
-    matches_sorted = sorted(matches, key=lambda x: (x.start, -(x.end - x.start)))
-    
-    final_matches = []
-    if not matches_sorted:
-        return []
-        
+    matches_sorted = sorted(
+        matches,
+        key=lambda x: (x.start, x.prioridade, -x.peso_aplicado, -(x.end - x.start)),
+    )
+
+    resultado: List[MatchInfo] = []
     current = matches_sorted[0]
-    
-    for next_match in matches_sorted[1:]:
-        # Se o próximo começa depois que o atual termina, não há overlap
-        if next_match.start >= current.end:
-            final_matches.append(current)
-            current = next_match
-        else:
-            # Há overlap. Escolhemos o que tem maior peso ou maior comprimento
-            if next_match.peso_aplicado > current.peso_aplicado:
-                current = next_match
-            # Se pesos iguais, mantém o mais longo (current já é o mais longo pela ordenação)
-            
-    final_matches.append(current)
-    return final_matches
 
-def _extrair_contexto(texto_completo: str, start: int, end: int, window: int = 50) -> str:
-    """Extrai texto ao redor do match para ajudar na decisão humana."""
-    s = max(0, start - window)
-    e = min(len(texto_completo), end + window)
-    return texto_completo[s:e]
+    for nxt in matches_sorted[1:]:
+        if nxt.start >= current.end:
+            resultado.append(current)
+            current = nxt
+            continue
 
-def _calcular_risco_contextual(texto_norm: str, start: int, end: int, window: int = 100) -> bool:
-    """Verifica se há palavras-chave de risco próximas ao match."""
+        cur_key = (current.prioridade, -current.peso_aplicado, -(current.end - current.start))
+        nxt_key = (nxt.prioridade, -nxt.peso_aplicado, -(nxt.end - nxt.start))
+
+        if nxt_key < cur_key:
+            current = nxt
+
+    resultado.append(current)
+    return resultado
+
+
+# =========================
+# Utilitários
+# =========================
+
+def _extrair_contexto(texto: str, start: int, end: int, window: int = 60) -> str:
     s = max(0, start - window)
-    e = min(len(texto_norm), end + window)
-    fragmento = texto_norm[s:e]
-    
-    for kw in PALAVRAS_CHAVE:
-        if kw in fragmento:
-            return True
-    return False
+    e = min(len(texto), end + window)
+    return texto[s:e]
+
 
 def _decidir_acao(score_total: int, politica: PoliticaRisco) -> str:
-    """Decide a ação final baseada no score acumulado e na política."""
     if score_total >= politica.score_bloquear:
         return "BLOQUEAR"
-    elif score_total >= politica.score_revisar:
+    if score_total >= politica.score_revisar:
         return "REVISAR"
-    else:
-        return "PUBLICAR"
+    return "PUBLICAR"
+
+
+# =========================
+# Core
+# =========================
 
 def analisar_texto(texto: Any, politica: PoliticaRisco = DEFAULT_POLITICA) -> Dict[str, Any]:
-    """
-    Função principal que analisa um único texto e retorna os achados.
-    """
     raw_text = normalizar_raw(texto)
-    # Normalização para busca de palavras-chave (contexto)
-    search_text = normalizar_busca(raw_text) 
-    
+    search_text = normalizar_busca(raw_text)
+
     if not raw_text:
         return {
             "status": "PUBLICAR",
             "score": 0,
+            "total_matches": 0,
             "matches": [],
-            "texto_anonimizado": ""
+            "texto_anonimizado": "",
         }
 
-    matches_encontrados: List[MatchInfo] = []
+    encontrados: List[MatchInfo] = []
 
-    # 1. Varredura de Regras
+    # 1) varredura
     for regra in REGRAS:
         for m in regra.padrao.finditer(raw_text):
-            valido = True
-            norm_val = m.group(0)
-            motivo = None
+            raw = m.group(0)
 
-            # Executa validador específico se houver
-            if regra.validator:
-                valido, norm_val, motivo = regra.validator(m)
-            
-            # Se a validação matemática falhar (ex: CPF com dígito errado), ignoramos o match
-            if not valido:
+            if regra.min_len and len(raw) < regra.min_len:
                 continue
 
-            # Cálculo de Peso com Contexto para regras 'soft'
+            ok = True
+            norm_val: Optional[str] = raw
+            motivo: Optional[str] = "padrao_direto"
+
+            if regra.validator:
+                ok, norm_val, motivo = regra.validator(m, raw_text, search_text)
+
+            if not ok:
+                continue
+
             peso_final = regra.peso
-            has_contexto = False
-            
-            if regra.tipo == 'soft':
-                # Regras soft precisam de contexto para ter peso relevante
-                if _calcular_risco_contextual(search_text, m.start(), m.end()):
-                    peso_final += 2 # Boost por contexto
-                    has_contexto = True
+
+            # soft: exige contexto? (ou aplica min/boost)
+            if regra.tipo == "soft":
+                has_ctx = _tem_kw(search_text, m.start(), m.end(), PALAVRAS_CHAVE_RISCO, window=110)
+
+                if regra.exige_contexto and not has_ctx:
+                    continue
+
+                if has_ctx:
+                    peso_final = max(peso_final, regra.peso_min_sem_contexto) + regra.boost_contexto
+                    if motivo is None or motivo == "padrao_direto":
+                        motivo = "soft_com_contexto"
                 else:
-                    peso_final = 1 # Peso mínimo se isolado
-            
-            matches_encontrados.append(MatchInfo(
-                regra=regra.nome,
-                start=m.start(),
-                end=m.end(),
-                raw=m.group(0),
-                norm=norm_val,
-                ok=valido,
-                motivo=motivo if not valido else ("contexto_encontrado" if has_contexto else "padrao_direto"),
-                peso_aplicado=peso_final
-            ))
+                    if regra.peso_min_sem_contexto <= 0:
+                        continue
+                    peso_final = regra.peso_min_sem_contexto
+                    if motivo is None or motivo == "padrao_direto":
+                        motivo = "soft_sem_contexto"
 
-    # 2. Resolução de Conflitos (Overlap)
-    matches_limpos = _verificar_overlap(matches_encontrados)
+            encontrados.append(
+                MatchInfo(
+                    regra=regra.nome,
+                    prioridade=regra.prioridade,
+                    start=m.start(),
+                    end=m.end(),
+                    raw=raw,
+                    norm=norm_val,
+                    ok=True,
+                    motivo=motivo,
+                    peso_aplicado=peso_final,
+                )
+            )
 
-    # 3. Consolidação e Cálculo de Score
-    score_total = sum(m.peso_aplicado for m in matches_limpos)
-    detalhes_matches = []
-    
-    # Criar texto anonimizado (máscara simples)
-    texto_anonimizado = list(raw_text)
-    
-    for m in matches_limpos:
-        # Mascarar no texto
-        for i in range(m.start, m.end):
-            texto_anonimizado[i] = '*'
-            
-        detalhes_matches.append({
-            "tipo": m.regra,
-            "valor_detectado": m.raw,
-            "contexto": _extrair_contexto(raw_text, m.start, m.end),
-            "score": m.peso_aplicado
-        })
+    # 2) resolve overlaps
+    limpos = _resolver_overlaps(encontrados)
+
+    # 3) score + anonimização
+    score_total = sum(x.peso_aplicado for x in limpos)
+    texto_anon = list(raw_text)
+
+    detalhes: List[Dict[str, Any]] = []
+    for x in limpos:
+        for i in range(x.start, x.end):
+            texto_anon[i] = "*"
+
+        detalhes.append(
+            {
+                "tipo": x.regra,
+                "valor_detectado": x.raw,
+                "valor_normalizado": x.norm,
+                "motivo": x.motivo,
+                "contexto": _extrair_contexto(raw_text, x.start, x.end),
+                "score": x.peso_aplicado,
+            }
+        )
 
     return {
         "status": _decidir_acao(score_total, politica),
         "score": score_total,
-        "total_matches": len(matches_limpos),
-        "matches": detalhes_matches,
-        "texto_anonimizado": "".join(texto_anonimizado)
+        "total_matches": len(limpos),
+        "matches": detalhes,
+        "texto_anonimizado": "".join(texto_anon),
     }
 
-def analisar_dataframe(df: pd.DataFrame, col_texto: str) -> List[Dict[str, Any]]:
-    """
-    Processa um DataFrame pandas inteiro.
-    Retorna uma lista de dicionários com os resultados.
-    """
-    resultados = []
-    
-    # Garante que não haja NaNs na coluna
+
+def analisar_dataframe(df: pd.DataFrame, col_texto: str, politica: PoliticaRisco = DEFAULT_POLITICA) -> List[Dict[str, Any]]:
+    resultados: List[Dict[str, Any]] = []
+    df = df.copy()
     df[col_texto] = df[col_texto].fillna("")
-    
+
     for idx, row in df.iterrows():
         texto = row[col_texto]
-        analise = analisar_texto(texto)
-        
-        # Adiciona ID da linha se houver, para rastreabilidade
-        res = {
-            "index": idx,
-            "texto_original_preview": str(texto)[:50] + "...",
-            **analise
-        }
-        resultados.append(res)
-        
+        analise = analisar_texto(texto, politica=politica)
+        resultados.append(
+            {
+                "index": idx,
+                "texto_original_preview": (str(texto)[:80] + "...") if len(str(texto)) > 80 else str(texto),
+                **analise,
+            }
+        )
     return resultados
