@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 TEXT_COLUMN_CANDIDATES = [
-    "descricao", "texto", "detalhe", "mensagem", "conteudo"
+    "descricao", "texto mascarado", "detalhe", "mensagem", "conteudo"
 ]
 
 DEFAULT_ENCODING = "utf-8"

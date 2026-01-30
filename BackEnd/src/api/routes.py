@@ -1,16 +1,17 @@
-# src/participa_df/api/routes.py
+
 import pandas as pd
 from fastapi import APIRouter, UploadFile, File
-from ..services.detector import analisar_texto
-from ..settings import TEXT_COLUMN_CANDIDATES
+from ..core.detector import analisar_texto
+from ..core.config import TEXT_COLUMN_CANDIDATES
+from .schemas import TextoRequest
 
 
 router = APIRouter()
 
 
 @router.post("/validate/text")
-def validar_texto(payload: dict):
-    return analisar_texto(payload.get("texto", ""))
+def validar_texto(payload: TextoRequest): 
+    return analisar_texto(payload.texto)
 
 
 @router.post("/validate/csv")
