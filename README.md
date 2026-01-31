@@ -54,6 +54,21 @@ Entrada → Normalização → Detecção → Validação → Classificação
 
 ---
 
+## 📹 Vídeo de Demonstração
+
+Confira o **SafeDoc-DF** em ação! No vídeo abaixo, apresentamos o fluxo completo da solução, desde a interface amigável até o processamento dos dados sensíveis.
+
+[![Assista ao Vídeo de Demonstração](https://img.youtube.com/vi/COLOQUE_O_ID_DO_VIDEO_AQUI/0.jpg)](https://youtu.be/6ouxHb6CS3Q)
+
+> **Clique na imagem acima para assistir.**
+
+### 📌 O que você verá na demo:
+* **Interface (Frontend):** Navegação fluida e responsiva desenvolvida em Angular.
+* **Análise em Tempo Real:** Demonstração da detecção de PII (CPFs, e-mails, telefones) em textos e arquivos CSV.
+* **Anonimização:** Visualização dos dados sendo mascarados automaticamente.
+* **Performance:** A rapidez de resposta da API na validação dos documentos.
+
+---
 ## 🏗️ Arquitetura do Projeto
 
 ```
