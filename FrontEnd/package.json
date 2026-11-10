@@ -1,51 +1,40 @@
 {
-  "name": "front-end",
-  "version": "0.0.0",
+  "name": "safedoc-df",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "start": "npm run seo && ng serve",
+    "seo": "node scripts/seo.ts",
+    "parity": "node scripts/parity.ts",
+    "og": "python -I scripts/og.py",
+    "build": "npm run seo && ng build",
+    "check": "node scripts/check.ts",
+    "build:pages": "npm run build && npm run check && npm run parity && node scripts/pages.ts"
   },
-  "prettier": {
-    "printWidth": 100,
-    "singleQuote": true,
-    "overrides": [
-      {
-        "files": "*.html",
-        "options": {
-          "parser": "angular"
-        }
-      }
-    ]
-  },
-  "private": true,
+  "packageManager": "npm@11.12.1",
   "dependencies": {
-    "@angular/common": "^20.2.0",
-    "@angular/compiler": "^20.2.0",
-    "@angular/core": "^20.2.0",
-    "@angular/forms": "^20.2.0",
-    "@angular/platform-browser": "^20.2.0",
-    "@angular/router": "^20.2.0",
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/platform-server": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@angular/ssr": "^21.2.29",
+    "@fontsource-variable/geist": "^5.2.0",
+    "@fontsource-variable/geist-mono": "^5.2.0",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0",
-    "zone.js": "~0.15.0"
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular/build": "^20.2.2",
-    "@angular/cli": "^20.2.2",
-    "@angular/compiler-cli": "^20.2.0",
-    "@types/jasmine": "~5.1.0",
-    "autoprefixer": "^10.4.23",
-    "jasmine-core": "~5.9.0",
-    "karma": "~6.4.0",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.0",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.1.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
+    "@angular/build": "^21.2.29",
+    "@angular/cli": "^21.2.29",
+    "@angular/compiler-cli": "^21.2.0",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^22.10.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.1.0",
     "typescript": "~5.9.2"
   }
 }

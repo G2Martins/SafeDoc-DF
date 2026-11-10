@@ -1,10 +1,8 @@
 import { Routes } from '@angular/router';
-import { HomeComponent } from './pages/home/home';
 
 export const routes: Routes = [
-  // Rota padrão: carrega a Home
-  { path: '', component: HomeComponent },
-  
-  // (Opcional) Redireciona qualquer rota desconhecida para a Home
-  { path: '**', redirectTo: '' }
+  { path: '', loadComponent: () => import('./pages/home').then((m) => m.Home) },
+  { path: 'lote', loadComponent: () => import('./pages/batch').then((m) => m.Batch) },
+  { path: 'como-funciona', loadComponent: () => import('./pages/how').then((m) => m.How) },
+  { path: '**', loadComponent: () => import('./pages/not-found').then((m) => m.NotFound) },
 ];

@@ -1,0 +1,30 @@
+# Dependencies and build caches
+node_modules/
+dist/
+.angular/
+out-tsc/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Generated before every build (scripts/seo.ts): sample CSVs from BackEnd/data/input, fonts from node_modules
+FrontEnd/public/amostras/
+FrontEnd/public/fonts/
+
+# Local screenshots (QA)
+.shots/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

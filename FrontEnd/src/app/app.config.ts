@@ -1,15 +1,14 @@
-import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { provideHttpClient, withFetch } from '@angular/common/http';
-
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
+import { UrlSerializer, provideRouter, withInMemoryScrolling } from '@angular/router';
 import { routes } from './app.routes';
+import { TrailingSlashSerializer } from './shared/trailing-slash';
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideZoneChangeDetection({ eventCoalescing: true }),
-    provideRouter(routes),
-    
-    // Habilita o HttpClient para conectar com seu Backend Python
-    provideHttpClient(withFetch()) 
-  ]
+    provideBrowserGlobalErrorListeners(),
+    provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'enabled', anchorScrolling: 'enabled' })),
+    provideClientHydration(withEventReplay(), withIncrementalHydration()),
+    { provide: UrlSerializer, useClass: TrailingSlashSerializer },
+  ],
 };

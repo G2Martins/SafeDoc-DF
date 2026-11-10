@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://g2martins.github.io/SafeDoc-DF/sitemap.xml

@@ -1,2 +1,70 @@
+<a href="#conteudo" class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:text-white">Pular para o conteúdo</a>
 
-<router-outlet />
+<!-- Portfolio disclaimer: always visible, first thing a visitor reads. -->
+<div class="border-b border-line bg-ink text-[12px] leading-snug text-[#d9d6e6]">
+  <div class="wrap flex items-center justify-center gap-2 py-2 text-center">
+    <app-icon name="lock" [size]="13" class="hidden text-marker sm:inline-flex" />
+    <p>
+      {{ disclaimer }}
+      <a [href]="links.project" class="ml-1 whitespace-nowrap text-marker underline underline-offset-2">Sobre o projeto</a>
+    </p>
+  </div>
+</div>
+
+<header class="sticky top-0 z-40 border-b border-line bg-bg/95 backdrop-blur-sm">
+  <div class="wrap flex h-16 items-center gap-4">
+    <a routerLink="/" class="flex shrink-0 items-center gap-2.5" aria-label="SafeDoc-DF, página inicial">
+      <app-brand [size]="30" />
+      <span class="text-[18px] font-semibold tracking-[-0.03em]">SafeDoc<span class="font-light text-ink-2">-DF</span></span>
+    </a>
+    <nav class="ml-auto flex items-center gap-4 sm:gap-7" aria-label="Principal">
+      <a routerLink="/" fragment="analisar" class="navlink hidden sm:inline">Analisar texto</a>
+      <a routerLink="/lote" routerLinkActive="active" class="navlink">Em lote</a>
+      <a routerLink="/como-funciona" routerLinkActive="active" class="navlink">Como funciona</a>
+      <a [href]="links.repo" class="-mr-2 hidden h-10 w-10 place-items-center sm:inline-grid rounded-lg text-ink-2 transition-colors hover:bg-well hover:text-ink" aria-label="Código no GitHub">
+        <app-icon name="github" [size]="19" />
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="conteudo" tabindex="-1" class="relative outline-none">
+  <router-outlet />
+</main>
+
+<footer class="mt-24 border-t border-line bg-panel/70">
+  <div class="wrap grid gap-10 py-14 md:grid-cols-[1.4fr_1fr_1fr]">
+    <div>
+      <a routerLink="/" class="inline-flex items-center gap-2.5" aria-label="SafeDoc-DF, página inicial">
+        <app-brand [size]="28" />
+        <span class="text-[17px] font-semibold tracking-[-0.03em]">SafeDoc<span class="font-light text-ink-2">-DF</span></span>
+      </a>
+      <p class="mt-4 max-w-sm text-[13px] leading-relaxed text-ink-2">
+        Criado para o 1º Hackathon em Controle Social: Desafio Participa DF (CGDF), categoria Acesso à Informação.
+        Esta versão estática roda o mesmo motor de regras da API no seu navegador.
+      </p>
+    </div>
+    <div>
+      <p class="eyebrow">Ferramenta</p>
+      <ul class="mt-4 space-y-2.5 text-[14px] text-ink-2">
+        <li><a routerLink="/" fragment="analisar" class="hover:text-ink">Analisar texto</a></li>
+        <li><a routerLink="/lote" class="hover:text-ink">Análise em lote (CSV)</a></li>
+        <li><a routerLink="/como-funciona" class="hover:text-ink">Como funciona</a></li>
+      </ul>
+    </div>
+    <div>
+      <p class="eyebrow">Projeto</p>
+      <ul class="mt-4 space-y-2.5 text-[14px] text-ink-2">
+        <li><a [href]="links.portfolio" class="hover:text-ink">Portfólio de {{ links.author }}</a></li>
+        <li><a [href]="links.project" class="hover:text-ink">SafeDoc-DF no portfólio</a></li>
+        <li><a [href]="links.repo" class="inline-flex items-center gap-2 hover:text-ink"><app-icon name="github" [size]="14" /> Código no GitHub</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-line">
+    <div class="wrap flex flex-col gap-2 py-6 text-[12px] leading-relaxed text-dim md:flex-row md:items-center md:justify-between">
+      <p>Equipe do hackathon: {{ links.author }} e {{ links.coauthor }}. Projeto independente, sem vínculo oficial com a CGDF.</p>
+      <p class="shrink-0">© {{ year }} · <a [href]="links.portfolio" class="hover:text-ink-2">{{ links.author }}</a></p>
+    </div>
+  </div>
+</footer>

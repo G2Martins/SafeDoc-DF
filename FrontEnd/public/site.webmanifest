@@ -1,0 +1,15 @@
+{
+  "name": "SafeDoc-DF",
+  "short_name": "SafeDoc-DF",
+  "description": "Detector de dados pessoais em pedidos de acesso à informação. Roda no navegador.",
+  "lang": "pt-BR",
+  "start_url": "/SafeDoc-DF/",
+  "scope": "/SafeDoc-DF/",
+  "display": "standalone",
+  "background_color": "#f4f3ee",
+  "theme_color": "#f4f3ee",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

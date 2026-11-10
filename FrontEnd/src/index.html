@@ -2,13 +2,24 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>SafeDoc-DF</title>
+  <title>SafeDoc-DF | Detector de dados pessoais em pedidos LAI</title>
   <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Encontre CPF, RG, telefone, e-mail e outros dados pessoais em pedidos de acesso à informação, veja o risco e baixe o texto anonimizado. Roda no navegador.">
+  <meta name="author" content="Gustavo Martins Gripaldi">
+  <!-- Privacy guard: the page may only fetch from its own origin (the bundled sample CSVs). Pasted text and uploads never leave. -->
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'self'; form-action 'none'; object-src 'none'; base-uri 'self'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f3ee">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/geist-mono.woff2" as="font" type="font/woff2" crossorigin>
 </head>
-<body class="bg-gray-50 text-gray-800 antialiased">
+<body>
   <app-root></app-root>
 </body>
 </html>
